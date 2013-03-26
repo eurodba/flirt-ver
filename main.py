@@ -5,7 +5,7 @@ __author__ = 'rostislav'
 import cx_Oracle
 import argparse
 
-DEBUG_FLAG = 'TRUE'
+DEBUG_FLAG = 'FALSE'
 
 def __conn_init(request):
     # change needed - get as Param1 name of ORACLE_SID
@@ -45,28 +45,39 @@ if __keys().tablespace == None:
     # strange Python behaviour - "escape '\' " generates error, but '\\' works ok...
     request = "select t2.* from (select username from dba_users where username like '%TOOLS%' order by username) t2 where t2.username not like '%\_TOOLS\_G\_%' escape '\\'"
     for i in __conn_init(request):
+        # i[0] stored TOOLS schema name (like CRYSTAL_TOOLS_DOH)
+        # later loop need to be added - it is possible, that TOOLS schemas can be >1
         print('Founded TOOLS schemas: %s' % i[0])
 
-    print ('')
     # in the loop select each schema of necessary type, registered in table SCHEMAS
-    request = "select t1.type_ref, t1.name from " + i[0] + ".schemas t1 where t1.type_ref in ('FLIRT_AP', 'FLIRT_M', 'FLIRT_MON', 'FLIRT_TOOLS', '1OPAL', '1OPAL_DATA', 'REPORT_GEN') order by t1.name"
+    request = "select t1.type_ref, t1.name from " + i[0] + ".schemas t1 where t1.type_ref in ('FLIRT_AP', 'FLIRT_M', 'FLIRT_MON', 'FLIRT_MSG', 'FLIRT_TOOLS', 'OPAL', 'OPAL_DATA', 'REPORT_GEN') order by t1.name"
     for i in __conn_init(request):
-        print('Founded ' + i[0] + ' schema ' + i[1])
+        # i[0] contains schema's type (like FLIRT_AP)
+        # i[1] contains schema's name (like CRYSTAL_AIRPORT_DOH)
+        # print('Founded ' + i[0] + ' schema ' + i[1])
 
-        # check, if schema exists in db
-        sql_text_t1 = "select 1 from dba_users t1 where t1.username = '" + i[1] + "'"
-        for j in __conn_init(sql_text_t1):
-            if j[0] != 1:
-                print ('Schema ' + [i1] + ' (type ' + i[0] + ') does not exists in DB - misconfiguration in table SCHENAS')
-                break
+        # perform checks:
+        # check 1: does schema (like CRYSTAL_AIRPORT_DOH) exists in db?
+        sql_1 = "select 1 from dba_users t1 where t1.username = '" + i[1] + "'"
+        for res_1 in __conn_init(sql_1):
+            if res_1[0] == 1:
+                schema_exists_flag = 1;
 
-            # check, if VER table exists in schema
-            sql_text_t1 = "select 1 from dba_tables t1 where t1.owner = '" + i[1] + "' and t1.table_name = 'VER'"
-            for j in __conn_init(sql_text_t1):
-                # select maximum installed pathlevel from each VER table in each schema
-                request2 = "select t2.ts, t2.patchlevel from (select t1.ts, t1.patchlevel from " + i[1] + ".VER t1 where t1.ok = 'Y' order by t1.patchlevel desc) t2 where rownum = 1"
-                for j in __conn_init(request2):
-                    print('Founded PATCHLEVEL: {0} {1}'.format(j[0], j[1]))
+                # check 2: if exists, does schema contains table VER?
+                sql_2 = "select 1 from dba_tables t1 where t1.owner = '" + i[1] + "' and t1.table_name = 'VER'"
+                for res_2 in __conn_init(sql_2):
+                    if res_2[0] == 1:
+                        table_exists_flag = 1;
+
+                        # main query: select maximum installed patchlevel from each VER table in each schema
+                        # 2 different query versions: for FLIRT schemas and for OPAL/REP_GEN
+                        if i[0] == 'FLIRT_AP' or i[0] == 'FLIRT_M' or i[0] == 'FLIRT_MON' or i[0] == 'FLIRT_TOOLS' or i[0] == 'FLIRT_MSG':
+                            sql_3 = "select t2.ts, t2.patchlevel from (select t1.ts, t1.patchlevel from " + i[1] + ".VER t1 where t1.ok = 'Y' order by t1.patchlevel desc) t2 where rownum = 1"
+                        else:
+                            sql_3 = "select t2.install_dt, t2.patch from (select t1.install_dt, t1.patch from " + i[1] + ".VER t1 where t1.finished = 'Y' order by t1.patch desc) t2 where rownum = 1"
+                        for res_3 in __conn_init(sql_3):
+                            ## print('{1:12} | {1:30} | {1:20} | {1:20}'.i[1], i[0], res_3[0], res_3[1])
+                            print('Schema', i[1],'- type', i[0], '=> patched on', res_3[0], '- patchlevel', res_3[1])
 
 else:
     request = ("""select tablespace_name, round(total_bytes/1024/1024) as fMb
